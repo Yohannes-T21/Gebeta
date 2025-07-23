@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Redirect, useRouter } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '@/store/authStore';
-import { clearAuthState, needsAuthentication } from '@/utils/authUtils';
+import { needsAuthentication } from '@/utils/authUtils';
 
 export default function AuthIndex() {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -12,8 +12,6 @@ export default function AuthIndex() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Clear any existing auth state to ensure fresh start
-        await clearAuthState();
         
         // Check if authentication is needed
         const needsAuth = await needsAuthentication();
