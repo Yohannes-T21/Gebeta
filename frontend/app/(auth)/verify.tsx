@@ -1,238 +1,150 @@
-import Button from "@/components/Button";
-import colors from "@/constants/colors";
-import typography from "@/constants/typography";
-import { useAuthStore } from "@/store/authStore";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { CountryCode } from "@/types/auth";
-import { ArrowLeft } from "lucide-react-native";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
+  View,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
-} from "react-native";
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  NativeSyntheticEvent,
+  TextInputKeyPressEventData,
+} from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
-interface VerifyScreenParams {
-  phone: string;
-}
+type OTPInputRef = TextInput | null;
 
 export default function VerifyScreen() {
+  const { phone } = useLocalSearchParams<{ phone: string }>();
   const router = useRouter();
-  const { phone: phoneParam } = useLocalSearchParams<{ phone?: string }>();
-  const { verifyOtp, isLoading, error, resendOtp } = useAuthStore();
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [isResending, setIsResending] = useState(false);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
-  
-  const phone = phoneParam || "";
+
+  const [otp, setOtp] = useState<string[]>(['', '', '', '', '', '']);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const inputRefs = useRef<Array<OTPInputRef>>(Array(6).fill(null));
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft((prevTime) => (prevTime > 0 ? prevTime - 1 : 0));
-    }, 1000);
-
-    return () => clearInterval(timer);
+    inputRefs.current[0]?.focus();
   }, []);
 
-  const handleOtpChange = (text: string, index: number) => {
-    if (text.length > 1) {
-      text = text[text.length - 1];
+  useEffect(() => {
+    const filled = otp.every((digit) => digit !== '');
+    if (filled) {
+      handleVerify();
     }
+  }, [otp]);
 
+  const handleChange = (value: string, index: number) => {
+    if (value.length > 1) value = value.charAt(value.length - 1);
     const newOtp = [...otp];
-    newOtp[index] = text;
+    newOtp[index] = value;
     setOtp(newOtp);
-
-    // Auto-focus next input
-    if (text && index < 5) {
+    if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
   };
 
-  const handleKeyPress = (e: any, index: number) => {
-    // Handle backspace
-    if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
+  const handleKeyPress = (
+    e: NativeSyntheticEvent<TextInputKeyPressEventData>,
+    index: number
+  ) => {
+    if (e.nativeEvent.key === 'Backspace' && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
-  const formatPhoneNumber = (phoneNumber: string) => {
-    // Format phone number for display (e.g., +251 91 123 4567)
-    if (!phoneNumber) return "";
-    
-    // Remove any non-digit characters
-    const cleaned = phoneNumber.replace(/\D/g, '');
-    
-    // Format based on length
-    if (cleaned.length <= 3) return `+${cleaned}`;
-    if (cleaned.length <= 5) return `+${cleaned.slice(0, 3)} ${cleaned.slice(3)}`;
-    if (cleaned.length <= 8) return `+${cleaned.slice(0, 3)} ${cleaned.slice(3, 5)} ${cleaned.slice(5)}`;
-    
-    return `+${cleaned.slice(0, 3)} ${cleaned.slice(3, 5)} ${cleaned.slice(5, 8)} ${cleaned.slice(8, 12)}`;
-  };
-
-  const handleAutoFill = () => {
-    // For development/testing - auto-fill OTP
-    const testOtp = "123456"; // Default test OTP
-    setOtp(testOtp.split(""));
-    inputRefs.current[5]?.focus(); // Focus the last input
-  };
-
   const handleVerify = async () => {
-    const code = otp.join("");
-    if (code.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit code");
-      return;
-    }
+    const otpCode = otp.join('');
+    if (otpCode.length !== 6) return;
+
+    setError('');
+    setSuccess('');
 
     try {
-      const isNewUser = await verifyOtp(code);
-      
-      // Navigate based on whether the user is new or existing
-      // The auth store will handle redirection after successful verification
-      if (isNewUser) {
-        // For new users, navigate to the profile tab where they can complete setup
-        // Using replace to prevent going back to the OTP screen
+      const res = await fetch(
+        'https://gebeta-delivery1.onrender.com/api/v1/users/verifySignupOTP',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, code: otpCode }),
+        }
+      );
+
+      const response = await res.json();
+
+      if (!res.ok) throw new Error(response?.message || 'OTP verification failed');
+
+      // Store token and user data securely
+      if (response.token && response.data?.user) {
+        // Store the authentication token
+        await SecureStore.setItemAsync('userToken', response.token);
+        
+        // Store the complete user data
+        const userData = {
+          id: response.data.user._id,
+          firstName: response.data.user.firstName,
+          phone: response.data.user.phone,
+          profilePicture: response.data.user.profilePicture,
+          role: response.data.user.role,
+          isPhoneVerified: response.data.user.isPhoneVerified,
+          addresses: response.data.user.addresses || [],
+          token: response.token
+        };
+        
+        // Store the parsed user data
+        await SecureStore.setItemAsync('userInfo', JSON.stringify(userData));
+        
+        // Also store in a global state if needed (optional)
+        // You can use a state management solution like Zustand or Context
+      }
+
+      setSuccess('✅ OTP verified successfully!');
+
+      setTimeout(() => {
         router.replace({
-          pathname: "/profile",
-          params: { setup: 'true' }
+          pathname: '/(tabs)' as any,
+          params: { screen: 'home' }
         });
-      } else {
-        // Redirect to main app for existing users
-        router.replace("/(tabs)");
-      }
-    } catch (error) {
-      console.error("Verification error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Invalid verification code. Please try again.";
-      Alert.alert("Error", errorMessage);
+      }, 1500);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Verification error';
+      setError(errorMessage);
     }
   };
-
-  const handleResend = async () => {
-    if (timeLeft > 0) return;
-    
-    setIsResending(true);
-    try {
-      const { phoneNumber } = useAuthStore.getState();
-      if (!phoneNumber) {
-        throw new Error("Phone number not found");
-      }
-      
-      // In a real app, call the resend OTP API
-      // await authAPI.resendOtp(phoneNumber);
-      
-      // For demo, just reset the timer and show success
-      setTimeLeft(60);
-      setOtp(["", "", "", "", "", ""]);
-      inputRefs.current[0]?.focus();
-      
-      Alert.alert("Success", "A new verification code has been sent to your phone.");
-    } catch (error) {
-      console.error("Resend error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to resend code. Please try again.";
-      Alert.alert("Error", errorMessage);
-    } finally {
-      setIsResending(false);
-    }
-  };
-
-  if (!phone) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>No phone number found. Please try again.</Text>
-        <Button title="Go Back" onPress={() => router.back()} />
-      </View>
-    );
-  }
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <ArrowLeft size={24} color={colors.text} />
-        </TouchableOpacity>
+      <Text style={styles.title}>Verify OTP</Text>
+      <Text style={styles.subtitle}>OTP sent to {phone}</Text>
 
-        <View style={styles.header}>
-          <Text style={styles.title}>Verification</Text>
-          <Text style={styles.subtitle}>
-            We've sent a verification code to{" "}
-            <Text style={styles.phoneText}>{formatPhoneNumber(phone)}</Text>
-          </Text>
-        </View>
-
-<TouchableOpacity 
-            style={styles.demoOtpContainer}
-            onPress={handleAutoFill}
-          >
-            <Text style={styles.demoOtpLabel}>Tap to auto-fill test OTP</Text>
-          </TouchableOpacity>
-
-        <View style={styles.form}>
-          <View style={styles.otpContainer}>
-            {otp.map((digit, index) => (
-              <TextInput
-                key={index}
-                ref={(ref) => {inputRefs.current[index] = ref; }}
-                style={styles.otpInput}
-                value={digit}
-                onChangeText={(text) => handleOtpChange(text, index)}
-                onKeyPress={(e) => handleKeyPress(e, index)}
-                keyboardType="number-pad"
-                maxLength={1}
-                selectTextOnFocus
-              />
-            ))}
-          </View>
-
-          {error && <Text style={styles.errorText}>{error}</Text>}
-
-          <Button
-            title="Verify"
-            onPress={handleVerify}
-            loading={isLoading}
-            fullWidth
-            style={styles.verifyButton}
-            disabled={otp.join("").length !== 6}
+      <View style={styles.otpContainer}>
+        {otp.map((digit, index) => (
+          <TextInput
+            key={index}
+            ref={(ref) => {
+              if (ref) inputRefs.current[index] = ref;
+            }}
+            style={styles.otpInput}
+            keyboardType="number-pad"
+            maxLength={1}
+            value={digit}
+            onChangeText={(text) => handleChange(text, index)}
+            onKeyPress={(e) => handleKeyPress(e, index)}
+            selectTextOnFocus
           />
+        ))}
+      </View>
 
-          <View style={styles.resendContainer}>
-            <Text style={styles.resendText}>Didn't receive the code? </Text>
-            <TouchableOpacity
-              onPress={handleResend}
-              disabled={timeLeft > 0 || isResending}
-            >
-              <Text
-                style={[
-                  styles.resendButton,
-                  (timeLeft > 0 || isResending) && styles.resendButtonDisabled,
-                ]}
-              >
-                {isResending
-                  ? "Sending..."
-                  : timeLeft > 0
-                  ? `Resend in ${timeLeft}s`
-                  : "Resend"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ScrollView>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {success ? <Text style={styles.success}>{success}</Text> : null}
+
+      <TouchableOpacity style={styles.button} onPress={handleVerify}>
+        <Text style={styles.buttonText}>Verify</Text>
+      </TouchableOpacity>
     </KeyboardAvoidingView>
   );
 }
@@ -240,90 +152,59 @@ export default function VerifyScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
     padding: 24,
-  },
-  backButton: {
-    marginBottom: 24,
-  },
-  header: {
-    marginBottom: 40,
+    justifyContent: 'center',
+    backgroundColor: '#fff',
   },
   title: {
-    ...typography.heading1,
-    color: colors.text,
+    fontSize: 26,
+    fontWeight: 'bold',
+    textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
-    ...typography.body,
-    color: colors.lightText,
-  },
-  phoneText: {
-    color: colors.text,
-    fontWeight: "600",
-  },
-  demoOtpContainer: {
-    backgroundColor: colors.primary + "15",
-    padding: 16,
-    borderRadius: 8,
+    fontSize: 16,
+    textAlign: 'center',
     marginBottom: 24,
-    alignItems: "center",
-  },
-  demoOtpLabel: {
-    ...typography.bodySmall,
-    color: colors.primary,
-    marginBottom: 4,
-  },
-  demoOtpValue: {
-    ...typography.heading3,
-    color: colors.primary,
-    letterSpacing: 2,
-  },
-  form: {
-    width: "100%",
+    color: '#666',
   },
   otpContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 32,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
   otpInput: {
     width: 48,
     height: 56,
-    borderRadius: 8,
-    backgroundColor: colors.inputBackground,
-    textAlign: "center",
-    fontSize: 24,
-    fontWeight: "600",
-    color: colors.text,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 10,
+    textAlign: 'center',
+    fontSize: 22,
+    backgroundColor: '#f5f5f5',
+    color: '#000',
   },
-  errorText: {
-    ...typography.caption,
-    color: colors.error,
-    marginBottom: 24,
-    textAlign: "center",
+  button: {
+    backgroundColor: '#34C759',
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginTop: 16,
   },
-  verifyButton: {
-    marginBottom: 24,
+  buttonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
-  resendContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
+  error: {
+    color: 'red',
+    textAlign: 'center',
+    marginBottom: 8,
   },
-  resendText: {
-    ...typography.body,
-    color: colors.lightText,
-  },
-  resendButton: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: "600",
-  },
-  resendButtonDisabled: {
-    color: colors.lightText,
+  success: {
+    color: '#28a745',
+    textAlign: 'center',
+    marginBottom: 8,
+    fontWeight: '600',
   },
 });

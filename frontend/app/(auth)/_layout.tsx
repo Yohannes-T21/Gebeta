@@ -27,70 +27,35 @@ const styles = StyleSheet.create({
   },
 });
 
-// This is the root layout for the authentication flow
-// It defines all the screens in the auth stack
-
 export default function AuthLayout() {
   return (
     <Stack
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: 'transparent',
-        },
-        headerBackground: () => <HeaderBackground />,
-        headerTintColor: colors.white,
-        headerTitleStyle: {
-          color: colors.white,
-        },
-        headerShadowVisible: false,
-        contentStyle: {
-          backgroundColor: colors.background,
-        },
-        // Ensure consistent animation for all screens
-        animation: 'slide_from_right',
-      }}
+      
     >
-      {/* Index screen - Handles initial redirection */}
       <Stack.Screen
         name="index"
-        key="auth-index"
         options={{
           title: "",
           headerShown: false,
-          animation: 'fade',
         }}
       />
-
-      {/* Phone Authentication Screen */}
       <Stack.Screen
-        name="phone-auth"
-        key="phone-auth-screen"
+        name="login"
         options={{
-          title: "Sign In / Sign Up",
-          headerShown: true,
-          animation: 'slide_from_right',
+          title: "",
+          headerShown: false,
         }}
       />
-
-      {/* OTP Verification Screen */}
       <Stack.Screen
         name="verify"
-        key="verify-screen"
         options={{
-          title: "Verify Phone Number",
-          headerShown: true,
-          animation: 'slide_from_right',
+          title: "Verify Phone",
         }}
       />
-
-      {/* Restaurant Owner Signup */}
       <Stack.Screen
         name="restaurant-owner-signup"
-        key="restaurant-signup-screen"
         options={{
-          title: "Restaurant Owner Sign Up",
-          headerShown: true,
-          animation: 'slide_from_right',
+          title: "Restaurant Owner Signup",
         }}
       />
     </Stack>
