@@ -19,7 +19,7 @@ export function createMockUser(phone: string, role: UserRole = 'user'): User {
   };
 
   // Add role-specific fields
-  if (role === 'restaurant_owner') {
+  if (role === 'owner') {
     user.restaurantName = `${name}'s Restaurant`;
     user.address = '123 Main St, Addis Ababa, Ethiopia';
     user.website = 'https://example.com';
